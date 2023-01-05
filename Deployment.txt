@@ -1,0 +1,88 @@
+Создаём deployment.yaml файл в котором будет храниться описание подов 
+
+apiVersion: apps/v1	#Версия развёртывания
+kind: Deployment	#Создание развёртывания
+metadata:
+  name: nginx
+  labels:	#Открытие доступа
+    app: nginx
+  namespace: deployment-demo
+  annotations:
+    monitoring: "true"
+spec:	
+  replicas: 3	#Количество разворачиваемых экземпляров пода
+  progressDeadlineSeconds: 30 #Максимальный тайм-аут развёртывания
+  selector:	#Указание для Deployment какими подами нужно управлять 
+    matchLabels:
+      app: nginx	#Выбор метки
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: #Стратегия отката на работоспособные реплики
+      maxSurge: 25% #Кол-во реплик с превышением значения replicas
+      maxUnavailable: 25% #Количество реплик, которое можно уронить
+  template:	#Описание шаблона пода
+    metadata:
+      labels:
+        app: nginx #Присвоение метки
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+        ports:
+        - containerPort: 80 #Отправка и принятие трафика на 80 порту  
+	  readinessProbe:	#Проверка на принятие трафика
+	    failureThreshold: 3	#Кол-во попыток readinessProbe
+          httpGet:	#Проверка по http запросу
+	      path: /
+            port: 80
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        livenessProbe:	#Проверка состояния приложения
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 80
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+          initialDelaySeconds: 10 #Время ожидания перед выполнением livenessProbe
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+          requests: 
+            memory: "128Mi"
+            cpu: "100m"
+
+Создаём файл service.yaml для публикации приложения как сетевого сервиса
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+  namespace: deployment-demo
+spec:
+  ports:
+  - nodePort: 30500
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: nginx
+  type: NodePort
+
+Используется NodePort для получения доступа к nginx на всех узлах k8s через
+порт 30500.
+Автоматически все запросы, поступающие к сервису nginx, будут отправляться в
+деплоймент nginx.
+
+Изменения:
+1) Увеличено кол-во реплик.
+2) Добавлен максимальный тайм-аут (в секундах), допустимый для развёртывания.
+Если по истечении этого времени разворачиваются не все поды, то выполняется
+автоматический откат к предыдущей версии приложения.
+3) Реализована стратегия RollingUpdate для постепенного перевода
+пользователей на работоспособные реплики.
